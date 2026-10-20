@@ -75,6 +75,9 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
         requestStartupPermissions()
         TeamsService.start(this)
         configureWebView()
+        // Keep JS timers running even while backgrounded (pairs with
+        // KeepAliveWebView) so Teams' realtime connection stays alive.
+        webView.resumeTimers()
 
         if (savedInstanceState == null) {
             webView.loadUrl(Constants.TEAMS_URL)

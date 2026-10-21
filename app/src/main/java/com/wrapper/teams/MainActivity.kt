@@ -43,6 +43,8 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
             runCatching { req.grant(req.resources) }
             pendingWebPermission = null
         }
+        // Permissions changed -> refresh the FGS type (adds microphone/camera).
+        TeamsService.start(this)
     }
 
     private val fileChooser = registerForActivityResult(
@@ -62,6 +64,9 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
     private val startupPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
+        // Re-start the keep-alive service so it re-declares its foreground type
+        // now that mic/camera may be granted (needed for WebRTC audio capture).
+        TeamsService.start(this)
         requestIgnoreBatteryOptimization()
     }
 

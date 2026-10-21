@@ -47,15 +47,35 @@ class TeamsService : Service() {
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                Constants.SERVICE_NOTIFICATION_ID, n,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Declare microphone/camera FGS types when we already hold the
+            // runtime permission. Without the microphone type, Android 14+
+            // soft-denies mic access (WebRTC gets a live but SILENT track) while
+            // this keep-alive service runs — the cause of "others can't hear me".
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            if (hasPerm(android.Manifest.permission.RECORD_AUDIO)) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+            if (hasPerm(android.Manifest.permission.CAMERA)) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            }
+            runCatching {
+                startForeground(Constants.SERVICE_NOTIFICATION_ID, n, type)
+            }.onFailure {
+                // Fallback if a type can't be started in the current state.
+                startForeground(
+                    Constants.SERVICE_NOTIFICATION_ID, n,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            }
         } else {
             startForeground(Constants.SERVICE_NOTIFICATION_ID, n)
         }
     }
+
+    private fun hasPerm(p: String): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(this, p) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private fun acquireWakeLock() {
         val pm = getSystemService(POWER_SERVICE) as PowerManager

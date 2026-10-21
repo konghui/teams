@@ -120,6 +120,15 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
 
         webView.addJavascriptInterface(WebAppInterface(applicationContext), Constants.JS_BRIDGE)
 
+        // Keep the WebView's (separate) renderer process at a high, non-waivable
+        // priority. Otherwise Android lowers its priority and evicts the camera
+        // it holds during a call (rapid CONNECT/DISCONNECT -> Teams "camera
+        // didn't work"). This was masked while a debugger was attached, which
+        // also pins the renderer — hence debug "worked", release didn't.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+        }
+
         installDocumentStartShims()
 
         webView.webViewClient = object : WebViewClient() {
@@ -275,7 +284,7 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
                 try{
                   for(var i=localStorage.length-1;i>=0;i--){
                     var lk=localStorage.key(i);
-                    if(/get-user-media-data-bag|lastUsedPhysicalCameraId|isLowEndDevice/i.test(lk))
+                    if(/get-user-media-data-bag|lastUsedPhysicalCameraId|isLowEndDevice|calling_selected_camera_device/i.test(lk))
                       localStorage.removeItem(lk);
                   }
                 }catch(e){}
@@ -315,7 +324,13 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
                   md.enumerateDevices = function(){
                     return oe().then(function(ds){
                       var out = ds.map(function(d){
-                        var id = d.deviceId || 'default';
+                        // Only AUDIO has a real 'default' pseudo-device. NEVER
+                        // fake a 'default' id for video — cameras only have real
+                        // (hashed) ids, and a phantom 'default' camera makes Teams
+                        // cache camera:default then request deviceId:{exact:default}
+                        // which throws OverconstrainedError ('camera didn't work').
+                        var isAudio = d.kind==='audioinput' || d.kind==='audiooutput';
+                        var id = d.deviceId || (isAudio ? 'default' : '');
                         var lab = d.label || (d.kind==='audioinput'?'Microphone':d.kind==='audiooutput'?'Speaker':d.kind==='videoinput'?'Camera':'');
                         return { deviceId:id, kind:d.kind, label:lab, groupId:d.groupId||'default',
                           toJSON:function(){ return {deviceId:id, kind:d.kind, label:lab, groupId:d.groupId||'default'}; } };
@@ -324,6 +339,25 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
                       if(!has('audioinput')) out.push({deviceId:'default',kind:'audioinput',label:'Microphone',groupId:'default',toJSON:function(){return this;}});
                       if(!has('audiooutput')) out.push({deviceId:'default',kind:'audiooutput',label:'Speaker',groupId:'default',toJSON:function(){return this;}});
                       return out;
+                    });
+                  };
+                }
+                // getUserMedia safety net: a stale/invalid exact deviceId (e.g. a
+                // cached camera:default) throws OverconstrainedError. Retry once
+                // without the deviceId constraint so any real camera/mic is used.
+                if(md && md.getUserMedia){
+                  var og = md.getUserMedia.bind(md);
+                  md.getUserMedia = function(c){
+                    return og(c).catch(function(err){
+                      if(err && err.name==='OverconstrainedError' && c && (c.video||c.audio)){
+                        try{
+                          var c2 = JSON.parse(JSON.stringify(c));
+                          if(c2.video && typeof c2.video==='object') delete c2.video.deviceId;
+                          if(c2.audio && typeof c2.audio==='object') delete c2.audio.deviceId;
+                          return og(c2);
+                        }catch(e2){}
+                      }
+                      throw err;
                     });
                   };
                 }

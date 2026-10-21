@@ -11,8 +11,8 @@ android {
         applicationId = "com.wrapper.teams"
         minSdk = 29
         targetSdk = 34
-        versionCode = 16
-        versionName = "2.5"
+        versionCode = 21
+        versionName = "3.0"
     }
 
     // Use a committed-free local keystore when present (keeps installs

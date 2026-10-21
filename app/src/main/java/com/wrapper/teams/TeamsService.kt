@@ -56,9 +56,11 @@ class TeamsService : Service() {
             if (hasPerm(android.Manifest.permission.RECORD_AUDIO)) {
                 type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             }
-            if (hasPerm(android.Manifest.permission.CAMERA)) {
-                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-            }
+            // NOTE: deliberately NOT declaring the camera FGS type. A running
+            // camera-typed service makes Android 14 treat the WebView's camera
+            // open as a background-service use, which gets evicted immediately
+            // (rapid camera CONNECT/DISCONNECT -> Teams "camera didn't work").
+            // A visible call activity already grants camera while-in-use.
             runCatching {
                 startForeground(Constants.SERVICE_NOTIFICATION_ID, n, type)
             }.onFailure {

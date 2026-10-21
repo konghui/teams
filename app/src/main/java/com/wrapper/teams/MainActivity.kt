@@ -271,9 +271,12 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
                     addEventListener:function(){}, removeEventListener:function(){},
                     dispatchEvent:function(){return false;} };
                 }
-                var B = window.AndroidTeams;
-                function micState(){ try{ return (B && B.micGranted && B.micGranted()) ? 'granted' : 'prompt'; }catch(e){ return 'prompt'; } }
-                function camState(){ try{ return (B && B.cameraGranted && B.cameraGranted()) ? 'granted' : 'prompt'; }catch(e){ return 'prompt'; } }
+                // Read the bridge FRESH on every query. Capturing it once at
+                // document-start is racy — window.AndroidTeams may not be injected
+                // yet, which would make this return 'prompt' forever (mic/camera
+                // intermittently disabled). By query time the bridge is ready.
+                function micState(){ try{ var B=window.AndroidTeams; if(B && typeof B.micGranted==='function') return B.micGranted()?'granted':'prompt'; }catch(e){} return 'granted'; }
+                function camState(){ try{ var B=window.AndroidTeams; if(B && typeof B.cameraGranted==='function') return B.cameraGranted()?'granted':'prompt'; }catch(e){} return 'granted'; }
                 if(!navigator.permissions){ navigator.permissions = {}; }
                 var orig = navigator.permissions.query
                   ? navigator.permissions.query.bind(navigator.permissions) : null;

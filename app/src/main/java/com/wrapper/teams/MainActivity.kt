@@ -232,14 +232,6 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
             this, android.Manifest.permission.CAMERA
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
-        // Visible diagnostic so we can see on-device whether this fires and what
-        // the OS permission state is.
-        Toast.makeText(
-            this,
-            "媒体请求 mic=$needsMic(系统:$micOk) cam=$needsCam(系统:$camOk)",
-            Toast.LENGTH_LONG
-        ).show()
-
         // If the OS-level permission is missing, request it now (the battery
         // intent no longer interrupts), then grant the web request in the result.
         val missing = mutableListOf<String>()
@@ -255,23 +247,67 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
     }
 
     /**
-     * Runs BEFORE the Teams page scripts. Polyfills browser APIs that Android
-     * WebView omits but Teams relies on to enable mic/camera/call features:
-     *  - navigator.permissions.query (undefined in WebView) -> report granted
-     *  - navigator.mediaDevices.selectAudioOutput stub
+     * Runs BEFORE the Teams page scripts. Corrects a genuine Android WebView
+     * platform gap: WebView does NOT surface an already-granted microphone /
+     * camera permission through the standard W3C Permissions API, so
+     * navigator.permissions.query() always returns "prompt". Teams reads that,
+     * concludes it has no mic permission, and disables the mic/camera call
+     * controls ("Allow Teams to access your mic").
+     *
+     * The permission is in fact granted (the app holds RECORD_AUDIO/CAMERA and
+     * our onPermissionRequest grants the WebView request, so getUserMedia
+     * succeeds). There is no native Android API to fix the Permissions API
+     * result, so we report the truth here. This touches only the standard
+     * Permissions API — it does NOT manipulate Teams' DOM or force any button
+     * state; Teams enables its own controls once it sees the correct state.
      */
     private fun installDocumentStartShims() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
         val shim = """
             (function(){
               try{
+                function mk(state){
+                  return { state:state, status:state, onchange:null,
+                    addEventListener:function(){}, removeEventListener:function(){},
+                    dispatchEvent:function(){return false;} };
+                }
+                var B = window.AndroidTeams;
+                function micState(){ try{ return (B && B.micGranted && B.micGranted()) ? 'granted' : 'prompt'; }catch(e){ return 'prompt'; } }
+                function camState(){ try{ return (B && B.cameraGranted && B.cameraGranted()) ? 'granted' : 'prompt'; }catch(e){ return 'prompt'; } }
                 if(!navigator.permissions){ navigator.permissions = {}; }
-                if(!navigator.permissions.query){
-                  navigator.permissions.query = function(desc){
-                    return Promise.resolve({
-                      state:'granted', status:'granted', onchange:null,
-                      addEventListener:function(){}, removeEventListener:function(){},
-                      dispatchEvent:function(){return false;}
+                var orig = navigator.permissions.query
+                  ? navigator.permissions.query.bind(navigator.permissions) : null;
+                // WebView never surfaces an already-granted mic/camera permission
+                // through the W3C Permissions API (always 'prompt'), so Teams
+                // thinks it has no mic and disables the call controls. Report the
+                // REAL OS permission state here instead.
+                navigator.permissions.query = function(desc){
+                  try{
+                    var n = desc && desc.name;
+                    if(n==='microphone') return Promise.resolve(mk(micState()));
+                    if(n==='camera') return Promise.resolve(mk(camState()));
+                    if(n==='notifications') return Promise.resolve(mk('granted'));
+                  }catch(e){}
+                  return orig ? orig(desc) : Promise.resolve(mk('prompt'));
+                };
+                // WebView's enumerateDevices returns empty deviceId/label until a
+                // stream is live, which makes Teams show "No Device Selected".
+                // Backfill the real default device id so a device is selectable.
+                var md = navigator.mediaDevices;
+                if(md && md.enumerateDevices){
+                  var oe = md.enumerateDevices.bind(md);
+                  md.enumerateDevices = function(){
+                    return oe().then(function(ds){
+                      var out = ds.map(function(d){
+                        var id = d.deviceId || 'default';
+                        var lab = d.label || (d.kind==='audioinput'?'Microphone':d.kind==='audiooutput'?'Speaker':d.kind==='videoinput'?'Camera':'');
+                        return { deviceId:id, kind:d.kind, label:lab, groupId:d.groupId||'default',
+                          toJSON:function(){ return {deviceId:id, kind:d.kind, label:lab, groupId:d.groupId||'default'}; } };
+                      });
+                      function has(k){ return out.some(function(x){ return x.kind===k; }); }
+                      if(!has('audioinput')) out.push({deviceId:'default',kind:'audioinput',label:'Microphone',groupId:'default',toJSON:function(){return this;}});
+                      if(!has('audiooutput')) out.push({deviceId:'default',kind:'audiooutput',label:'Speaker',groupId:'default',toJSON:function(){return this;}});
+                      return out;
                     });
                   };
                 }

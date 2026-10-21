@@ -41,6 +41,23 @@ class WebAppInterface(private val context: Context) {
         CallAudio.setInCall(context, active)
     }
 
+    /**
+     * Real OS-level permission state, bridged to the page so our document-start
+     * shim can make navigator.permissions.query() report the truth (WebView
+     * never surfaces an already-granted mic/camera permission via that API).
+     */
+    @JavascriptInterface
+    fun micGranted(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    @JavascriptInterface
+    fun cameraGranted(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
     /** Simple log passthrough for debugging the injected script. */
     @JavascriptInterface
     fun log(msg: String?) {

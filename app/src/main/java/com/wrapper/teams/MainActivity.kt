@@ -266,6 +266,19 @@ class MainActivity : AppCompatActivity(), CallController.WebDriver {
         val shim = """
             (function(){
               try{
+                // Teams caches a device-health result in localStorage. If the
+                // camera/mic ever failed once (e.g. the earlier permission bug),
+                // Teams keeps the stale "didn't work" state and disables the
+                // control forever. Wipe the health cache on each load so Teams
+                // re-detects devices fresh (now that permissions work). We keep
+                // the user's device *selections* intact.
+                try{
+                  for(var i=localStorage.length-1;i>=0;i--){
+                    var lk=localStorage.key(i);
+                    if(/get-user-media-data-bag|lastUsedPhysicalCameraId|isLowEndDevice/i.test(lk))
+                      localStorage.removeItem(lk);
+                  }
+                }catch(e){}
                 function mk(state){
                   return { state:state, status:state, onchange:null,
                     addEventListener:function(){}, removeEventListener:function(){},

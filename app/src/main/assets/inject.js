@@ -27,10 +27,10 @@
       '[data-tid="draggable-header"]{pointer-events:none!important;}' +
       // Android WebView flashes a highlight over the whole tappable region on
       // tap; on the chat list this lights up the entire group. Kill the flash.
-      '*{-webkit-tap-highlight-color:transparent!important;}' +
-      // Roomier chat/nav rows: the default rows are cramped on a phone, so give
-      // each list row more height and vertical breathing room (easier to tap).
-      '.fui-TreeItemLayout{min-height:58px!important;padding-top:10px!important;padding-bottom:10px!important;}';
+      '*{-webkit-tap-highlight-color:transparent!important;}';
+    // NOTE: increasing chat-list row height via CSS was tried and reverted — the
+    // list is virtualized (rows positioned by JS at a fixed pitch), so forcing a
+    // taller row makes text overlap badly. Left at Teams' default height.
     (document.head || document.documentElement).appendChild(style);
   } catch (e) { log("hide-toast css err " + e); }
 
